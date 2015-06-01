@@ -218,3 +218,83 @@ class VcfConverter(AbstractConverter):
     def __init__(self, httpClient, outputStream, searchVariantSetsRequest,
                  searchVariantsRequest):
         raise NotImplementedError
+
+
+##############################################################################
+# Lastgraph
+##############################################################################
+
+
+class LastgraphConverter(AbstractConverter):
+    """
+    Converts a request to a lastgraph file
+    """
+    def __init__(self, httpClient, outputStream, searchSequencesRequest,
+        searchJoinsRequest):
+        """
+        Given the HTTP client used to make the requests, a stream to write the
+        lastgraph-format output to, a request for all the sequences in a
+        ReferenceSet, and a request for all the joins in a ReferenceSet, creates
+        a converter that converts the graph defined by the sequences and joins
+        to lastgraph format. Every sequence will become a node, and every join
+        an arc.
+        """
+
+        super(LastgraphConverter, self).__init__(httpClient)
+
+        # Save the arguments
+        self._outputStream = outputStream
+        self._searchSequencesRequest = searchSequencesRequest
+        self._searchJoinsRequest = searchJoinsRequest
+
+        # We need to keep nonzero int numbers for sequences. This holds a dict
+        # from sequence ID to sequence number.
+        self._sequence_nums = {}
+
+    def _sequence_num(self, sequence_id):
+        """
+        Convert a sequence ID string to a sequence number, which is nonzeor and
+        suitable for use as a lastgraph node number.
+
+        """
+
+        if not self._sequence_nums.has_key(sequence_id):
+            # Need to add it
+            self._sequence_nums[sequence_id] = len(self._sequence_nums) + 1
+
+        # Look up the number for this ID and give it back
+        return self._sequence_nums[sequence_id]
+
+    def convert(self):
+        """
+        Actually do the conversion.
+        """
+
+        # Get an iterator over the sequences
+        sequences = self._httpClient.searchSequences(
+            self._searchSequencesRequest)
+
+        # Get an iterator over the joins
+        joins = self._httpClient.searchJoins(self._searchJoinsRequest)
+
+        # Put out a (wrong) lastgraph header.
+        # TODO: Know the number of nodes first. Make two passes?
+        self._outputStream.write("0\t0\t0\t0")
+
+        for sequence in sequences:
+            # Each sequence gets a node. Write only the node ID and length,
+            # leaving out the covered base count.
+            self._outputStream.write("NODE\t{}\t{}\n".format(
+                self._sequence_num(sequence.id), sequence.length))
+
+            # Now we need the node sequence.
+            for i in xrange(2):
+                # For each direction (forward and reverse)
+                for j in xrange(sequence.length):
+                    # For each base in that direction, put an N.
+                    # TODO: call getSequenceBases
+                    self._outputStream.write("N")
+
+                # End the line
+                self._outputStream.write("\n")
+
