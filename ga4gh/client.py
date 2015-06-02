@@ -103,8 +103,18 @@ class HttpClient(object):
         jsonResponseString = response.text
         self._updateBytesRead(jsonResponseString)
         self._debugResponse(jsonResponseString)
-        responseObject = protocolResponseClass.fromJsonString(
-            jsonResponseString)
+
+        # Parse the JSON.
+        jsonDict = json.loads(jsonResponseString)
+
+        # Make sure the server isn't sending back invalid data.
+        if not protocolResponseClass.validate(jsonDict):
+            raise Exception(
+                "Invalid Avro object returned form server: {}".format(
+                jsonResponseString))
+
+        # Instantiate the response
+        responseObject = protocolResponseClass.fromJsonDict(jsonDict)
         return responseObject
 
     def _updateNotDone(self, responseObject, protocolRequest):

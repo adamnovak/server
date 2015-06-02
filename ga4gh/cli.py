@@ -96,15 +96,18 @@ class RequestFactory(object):
         request = protocol.SearchReferencesRequest()
         setCommaSeparatedAttribute(request, self.args, 'accessions')
         setCommaSeparatedAttribute(request, self.args, 'md5checksums')
-        request.referenceSetId = self.args.referenceSetName
+        request.referenceSetId = self.args.referenceSetId
         return request
 
     def createSearchSequencesRequest(self):
         request = protocol.SearchSequencesRequest()
+        request.referenceSetId = self.args.referenceSetId
         return request
 
     def createSearchJoinsRequest(self):
         request = protocol.SearchJoinsRequest()
+        request.referenceSetId = self.args.referenceSetId
+        # TODO: Add in the parent sequence, start, and length parameters
         return request
 
     def createSearchReadGroupSetsRequest(self):
@@ -262,6 +265,57 @@ def addBinaryOutputArgument(parser):
         "--binaryOutput", "-b", default=False,
         action="store_true", help="Output a BAM (binary) file")
 
+##############################################################################
+# ga2lastgraph
+##############################################################################
+
+
+def ga2lastgraph_main(parser=None):
+    # parse args
+    if parser is None:
+        parser = argparse.ArgumentParser(
+            description="GA4GH LastGraph conversion tool")
+    addClientGlobalOptions(parser)
+    subparsers = parser.add_subparsers(title='subcommands',)
+    # TODO: Is this the same overloading problem that ga2vcf has?
+    sequencesSearchParser = addSequencesSearchParser(subparsers)
+    joinsSearchParser = addJoinsSearchParser(subparsers)
+    addOutputFileArgument(parser)
+    args = parser.parse_args()
+
+    if "runner" not in args:
+        # TODO: Why are we looking for this? What does this mean?
+        parser.print_help()
+    else:
+        ga2lastgraph_run(args)
+
+
+def ga2lastgraph_run(args):
+    # instantiate params
+    searchSequencesRequest = RequestFactory(
+        args).createSearchSequencesRequest()
+    searchJoinsRequest = RequestFactory(
+        args).createSearchJoinsRequest()
+    workarounds = getWorkarounds(args)
+    httpClient = client.HttpClient(
+        args.baseUrl, args.verbose, workarounds, args.key)
+
+    if args.outputFile is None:
+        # By default output goes to stdout
+        outputStream = sys.stdout
+    else:
+        # But it can be redirected to a file
+        outputStream = open(args.outputFile, 'w')
+
+    # do conversion
+    lastgraphConverter = converters.LastgraphConverter(httpClient, outputStream,
+        searchSequencesRequest, searchJoinsRequest)
+    lastgraphConverter.convert()
+
+    # cleanup
+    if args.outputFile is not None:
+        outputStream.close()
+
 
 ##############################################################################
 # Server
@@ -355,6 +409,8 @@ class AbstractSearchRunner(AbstractQueryRunner):
             # ListReferenceBasesRequest does not have a pageSize attr
             request.pageSize = args.pageSize
         self._request = request
+
+        # TODO: _httpClient clearly not set as in docstring.
 
     def _run(self, method, attrName=None):
         """
@@ -766,12 +822,10 @@ def addNameArgument(parser):
         "--name", default=None,
         help="The name to search over")
 
-
-def addReferenceSetNameArgument(parser):
+def addReferenceSetIdArgument(parser):
     parser.add_argument(
-        "--referenceSetName", default=None,
-        help="The reference set name to search over")
-
+        "--referenceSetId", default=None,
+        help="The reference set ID to search over")
 
 def addPositionArgument(parser):
     parser.add_argument(
@@ -792,7 +846,8 @@ def addRadiusArgument(parser):
 
 
 def addClientGlobalOptions(parser):
-    parser.add_argument('--verbose', '-v', action='count', default=0)
+    parser.add_argument('--verbose', '-v', action='count', default=0,
+        help="Report more debugging information. Can be specified repeatedly.")
     parser.add_argument(
         "--workarounds", "-w", default=None, help="The workarounds to use")
     parser.add_argument(
@@ -867,7 +922,7 @@ def addReferencesSearchParser(subparsers):
         help="Search for references")
     parser.set_defaults(runner=SearchReferencesRunner)
     addUrlArgument(parser)
-    addReferenceSetNameArgument(parser)
+    addReferenceSetIdArgument(parser)
     addPageSizeArgument(parser)
     addAccessionsArgument(parser)
     addMd5ChecksumsArgument(parser)
@@ -881,7 +936,7 @@ def addSequencesSearchParser(subparsers):
         help="Search for sequences")
     parser.set_defaults(runner=SearchSequencesRunner)
     addUrlArgument(parser)
-    addReferenceSetNameArgument(parser)
+    addReferenceSetIdArgument(parser)
     addVariantSetIdsArgument(parser)
     addPageSizeArgument(parser)
     return parser
@@ -894,7 +949,7 @@ def addJoinsSearchParser(subparsers):
         help="Search for joins")
     parser.set_defaults(runner=SearchJoinsRunner)
     addUrlArgument(parser)
-    addReferenceSetNameArgument(parser)
+    addReferenceSetIdArgument(parser)
     addVariantSetIdsArgument(parser)
     addPageSizeArgument(parser)
     return parser
@@ -926,7 +981,7 @@ def addSubgraphExtractParser(subparsers):
         from a given starting position""")
     parser.set_defaults(runner=ExtractSubgraphRunner)
     addUrlArgument(parser)
-    addReferenceSetNameArgument(parser)
+    addReferenceSetIdArgument(parser)
     addVariantSetIdsArgument(parser)
     addPositionArgument(parser)
     addSequenceIdArgument(parser)
