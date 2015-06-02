@@ -109,9 +109,8 @@ class HttpClient(object):
 
         # Make sure the server isn't sending back invalid data.
         if not protocolResponseClass.validate(jsonDict):
-            raise Exception(
-                "Invalid Avro object returned form server: {}".format(
-                jsonResponseString))
+            # If it is, complain, but don't break; we will try to fix it.
+            self._logger.warn("Invalid Avro object returned form server!")
 
         # Instantiate the response
         responseObject = protocolResponseClass.fromJsonDict(jsonDict)
@@ -119,7 +118,9 @@ class HttpClient(object):
 
     def _updateNotDone(self, responseObject, protocolRequest):
         if hasattr(responseObject, 'nextPageToken'):
-            protocolRequest.pageToken = responseObject.nextPageToken
+            # Ensure the page token is a string. The reference server currently
+            # sometimes sends numbers, but requires strings back.
+            protocolRequest.pageToken = str(responseObject.nextPageToken)
             notDone = responseObject.nextPageToken is not None
         else:
             notDone = False
