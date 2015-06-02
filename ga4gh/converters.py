@@ -246,25 +246,7 @@ class LastgraphConverter(AbstractConverter):
         self._outputStream = outputStream
         self._searchSequencesRequest = searchSequencesRequest
         self._searchJoinsRequest = searchJoinsRequest
-
-        # We need to keep nonzero int numbers for sequences. This holds a dict
-        # from sequence ID to sequence number.
-        self._sequence_nums = {}
-
-    def _sequence_num(self, sequence_id):
-        """
-        Convert a sequence ID string to a sequence number, which is nonzeor and
-        suitable for use as a lastgraph node number.
-
-        """
-
-        if not self._sequence_nums.has_key(sequence_id):
-            # Need to add it
-            self._sequence_nums[sequence_id] = len(self._sequence_nums) + 1
-
-        # Look up the number for this ID and give it back
-        return self._sequence_nums[sequence_id]
-
+        
     def convert(self):
         """
         Actually do the conversion.
@@ -280,64 +262,148 @@ class LastgraphConverter(AbstractConverter):
         # TODO: Download all the sequences and joins and convert from string
         # graph to side graph (split nodes on joins).
         
-        # Keep a list of (base, face) pairs on which joins are incedent in every
-        # sequence.
+        # Keep a set of (base, face) pairs on which joins are incedent in every
+        # sequence, in a dict by sequence ID.
+        sequence_breakers = collections.defaultdict(set)
+        
+        # Keep the downloaded joins so we don't have to get them again. Holds
+        # pairs of (sequence, (index, is_right_side)) tuples. TODO: memory
+        # usage?
+        downloaded_joins = []
+        
+        def to_endpoint(side):
+            """
+            Turn a join Side into a sequence ID and an (index, is_right_side)
+            pair.
+            
+            """
+            
+            return side.base.sequenceId, (int(side.base.position), 
+                side.strand == "NEG_STRAND")
+                
+        def implicit_partner(endpoint):
+            """
+            Given a (index, is_right_side) pair, produce the implicitly joined
+            partner.
+            
+            """
+            
+            if endpoint[1]:
+                # Right sides need left sides
+                return (endpoint[0] + 1, False)
+            else:
+                # Left sides need right sides
+                return (endpoint[0] - 1, True)
+                
         
         # Fill them in
+        for join in joins:
+            # For each join
+            
+            # Save it
+            downloaded_joins.append((to_endpoint(join.side1),
+                to_endpoint(join.side2)))
+            
+            # Break sequences at both ends, by adding (index, is_right_side)
+            # pairs to the set of necessary breakpoints. We do this format so
+            # they sort correctly.
+            for seq, endpoint in [to_endpoint(side) 
+                for side in [join.side1, join.side2]]:
+                
+                # For each place on each sequence the join touches, break the
+                # sequence there.
+                sequence_breakers[seq].add(endpoint)
+                
+                # Make sure to add the partner endpoint for the implicit join we
+                # are making. It may be off the sequence; we will deal with that
+                # later.
+                sequence_breakers[seq].add(implicit_partner(endpoint))
         
-        # Sort them
+        # We need to know how long each node is. This stores (sequence_id,
+        # start, length) tuples for each node. The node number is 1 + the index
+        # here.
+        nodes = []
         
-        # Running along each, assign a node ID to every space between joins (or
-        # joins and ends). Emit the nodes.
+        # What's the total length of all nodes?
+        total_length = 0
         
-        # Save that node ID in a dict under (base, face) (with the understanding
-        # that it refers to the forward strand).
+        # We now need to build this join (sequence_id, (index, is_right_side))
+        # tuple to node number (node index + 1, negated for right side) dict.
+        node_for_endpoint = {}
         
-        # Go through the joins and spit them out, pointing them at the correct
-        # nodes.
-
-        # Put out a (wrong) lastgraph header.
-        # TODO: Know the number of nodes first. Make two passes?
-        self._outputStream.write("0\t0\t0\t0\n")
-
         for sequence in sequences:
-            # Each sequence gets a node. Write only the node ID and length,
-            # leaving out the covered base count.
-            self._outputStream.write("NODE\t{}\t{}\n".format(
-                self._sequence_num(sequence.id), sequence.length))
+            # For every sequence object, we're going to split it (now that we
+            # have the length).
+            
+            # Add the left end and right end endpoints.
+            sequence_breakers[sequence.id].add((0, False))
+            sequence_breakers[sequence.id].add((int(sequence.length) - 1, True))
+            
+            # Grab all the places we need to have ends after we break the
+            # sequence. We are guaranteed proper segments (at least one) with
+            # endpoints on each end that are within the bounds of the sequence.
+            endpoints = sorted((endpoint 
+                for endpoint in sequence_breakers[sequence.id] 
+                if endpoint[0] >= 0 and endpoint[0] < int(sequence.length)))
+            
+            for i in xrange(0, len(endpoints) - 1):
+                if endpoints[i][1]:
+                    # We're looking at an implicit join, since we have a right
+                    # and then (presumably) a left. Add it.
+                    downloaded_joins.append(((sequence.id, endpoints[i]),
+                        (sequence.id, endpoints[i + 1])))
+                else:
+                    # We're looking at a segment
+                    
+                    # Where does this segment/node start in the sequence, and
+                    # how long does it run?
+                    start = endpoints[i][0]
+                    length = endpoints[i + 1][0] - start + 1
+                    
+                    # Note the contribution to the total length
+                    total_length += length
+                    
+                    # Add the node
+                    nodes.append((sequence.id, start, length))
+                    
+                    # Point to it for when we do the joins. Left side gets node
+                    # number (index + 1), right side gets node number negated.
+                    # When we output the join, we will have to additionally
+                    # negate its source.
+                    node_for_endpoint[(sequence.id, endpoints[i])] = \
+                        len(nodes)
+                    node_for_endpoint[(sequence.id, endpoints[i + 1])] = \
+                        -len(nodes)
+                
+        # Now we have the whole string graph in memory and can spit it out.
+                
+        # Put out a lastgraph header.
+        self._outputStream.write("{}\t0\t0\t0\n".format(len(nodes)))
 
+        for index, (sequence_id, start, length) in enumerate(nodes):
+            # Announce every node with its number (= index + 1) and length
+            
+            self._outputStream.write("NODE\t{}\t{}\t0\n".format(index + 1,
+                length))
+            
             # Now we need the node sequence.
             for i in xrange(2):
                 # For each direction (forward and reverse)
                 
-                # TODO: When we can trust the input validation and parsing not
-                # to feed us strings in Avro fields that should be ints, we can
-                # stop trying to parse ints here.
-                for j in xrange(int(sequence.length)):
+                for j in xrange(length):
                     # For each base in that direction, put an N.
-                    # TODO: call getSequenceBases
+                    # TODO: call getSequenceBases and use the start
                     self._outputStream.write("N")
 
                 # End the line
                 self._outputStream.write("\n")
                 
-        for join in joins:
-            # Each join gets an arc.
-            
-            # TODO: Just assume everything is to sequence ends for now, ignore
-            # position
-            
-            node1_id = self._sequence_num(join.side1.base.sequenceId)
-            
-            if join.side1.strand == "POS_STRAND":
-                # Reverse this since it's a left
-                node1_id = -node1_id
-                
-            node2_id = self._sequence_num(join.side2.base.sequenceId)
-            
-            if join.side2.strand == "POS_STRAND":
-                # Reverse this since it's a left
-                node2_id = -node2_id
-            
-            self._outputStream.write("ARC\t{}\t{}\n".format(node1_id, node2_id))
+        # Now the arcs.
+        for end1, end2 in downloaded_joins:
+            # For each join we recorded, make an arc between those pre-negated
+            # node numbers. We have to additionally negate the first one again,
+            # because positive numbers all around correspond to a right to left
+            # join.
+            self._outputStream.write("ARC\t{}\t{}\n".format(
+                -node_for_endpoint[end1], node_for_endpoint[end2]))
 
