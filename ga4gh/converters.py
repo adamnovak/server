@@ -276,10 +276,29 @@ class LastgraphConverter(AbstractConverter):
 
         # Get an iterator over the joins
         joins = self._httpClient.searchJoins(self._searchJoinsRequest)
+        
+        # TODO: Download all the sequences and joins and convert from string
+        # graph to side graph (split nodes on joins).
+        
+        # Keep a list of (base, face) pairs on which joins are incedent in every
+        # sequence.
+        
+        # Fill them in
+        
+        # Sort them
+        
+        # Running along each, assign a node ID to every space between joins (or
+        # joins and ends). Emit the nodes.
+        
+        # Save that node ID in a dict under (base, face) (with the understanding
+        # that it refers to the forward strand).
+        
+        # Go through the joins and spit them out, pointing them at the correct
+        # nodes.
 
         # Put out a (wrong) lastgraph header.
         # TODO: Know the number of nodes first. Make two passes?
-        self._outputStream.write("0\t0\t0\t0")
+        self._outputStream.write("0\t0\t0\t0\n")
 
         for sequence in sequences:
             # Each sequence gets a node. Write only the node ID and length,
@@ -290,11 +309,35 @@ class LastgraphConverter(AbstractConverter):
             # Now we need the node sequence.
             for i in xrange(2):
                 # For each direction (forward and reverse)
-                for j in xrange(sequence.length):
+                
+                # TODO: When we can trust the input validation and parsing not
+                # to feed us strings in Avro fields that should be ints, we can
+                # stop trying to parse ints here.
+                for j in xrange(int(sequence.length)):
                     # For each base in that direction, put an N.
                     # TODO: call getSequenceBases
                     self._outputStream.write("N")
 
                 # End the line
                 self._outputStream.write("\n")
+                
+        for join in joins:
+            # Each join gets an arc.
+            
+            # TODO: Just assume everything is to sequence ends for now, ignore
+            # position
+            
+            node1_id = self._sequence_num(join.side1.base.sequenceId)
+            
+            if join.side1.strand == "POS_STRAND":
+                # Reverse this since it's a left
+                node1_id = -node1_id
+                
+            node2_id = self._sequence_num(join.side2.base.sequenceId)
+            
+            if join.side2.strand == "POS_STRAND":
+                # Reverse this since it's a left
+                node2_id = -node2_id
+            
+            self._outputStream.write("ARC\t{}\t{}\n".format(node1_id, node2_id))
 
