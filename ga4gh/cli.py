@@ -283,18 +283,16 @@ def ga2lastgraph_main(parser=None):
         parser = argparse.ArgumentParser(
             description="GA4GH LastGraph conversion tool")
     addClientGlobalOptions(parser)
-    subparsers = parser.add_subparsers(title='subcommands',)
-    # TODO: Is this the same overloading problem that ga2vcf has?
-    sequencesSearchParser = addSequencesSearchParser(subparsers)
-    joinsSearchParser = addJoinsSearchParser(subparsers)
+    # Don't mess about with subparsers, just re-iterate the allowed filters
+    # here.
+    addUrlArgument(parser)
+    addReferenceSetIdArgument(parser)
+    addVariantSetIdsArgument(parser)
+    addPageSizeArgument(parser)
     addOutputFileArgument(parser)
     args = parser.parse_args()
 
-    if "runner" not in args:
-        # TODO: Why are we looking for this? What does this mean?
-        parser.print_help()
-    else:
-        ga2lastgraph_run(args)
+    ga2lastgraph_run(args)
 
 
 def ga2lastgraph_run(args):
