@@ -120,7 +120,8 @@ class HttpClient(object):
         if hasattr(responseObject, 'nextPageToken'):
             # Ensure the page token is a string. The reference server currently
             # sometimes sends numbers, but requires strings back.
-            protocolRequest.pageToken = str(responseObject.nextPageToken)
+            protocolRequest.pageToken = str(responseObject.nextPageToken) \
+                if responseObject.nextPageToken is not None else None
             notDone = responseObject.nextPageToken is not None
         else:
             notDone = False

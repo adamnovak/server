@@ -29,7 +29,8 @@ def _parsePageToken(pageToken, numValues):
     tokens = pageToken.split(":")
     # TODO define exceptions.InvalidPageToken and raise here.
     if len(tokens) != numValues:
-        raise Exception("Invalid number of values in page token")
+        raise Exception("Invalid number of values in page token '{}'".format(
+            pageToken))
     # TODO catch a ValueError here when bad integers are passed and
     # convert this into the appropriate InvalidPageToken exception.
     values = map(int, tokens)
