@@ -158,6 +158,13 @@ class RequestFactory(object):
         request.start = self.args.start
         request.end = self.args.end
         return request
+        
+    def createGetSequenceBasesRequest(self):
+        request = protocol.GetSequenceBasesRequest()
+        request.position.sequenceId = self.args.sequenceId
+        request.start = self.args.start
+        request.end = self.args.end
+        return request
 
 
 def getWorkarounds(args):

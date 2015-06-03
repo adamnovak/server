@@ -7,6 +7,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import collections
+import string
 
 import pysam
 
@@ -247,6 +248,42 @@ class LastgraphConverter(AbstractConverter):
         self._searchSequencesRequest = searchSequencesRequest
         self._searchJoinsRequest = searchJoinsRequest
         
+        # We need a cache of sequence bases for populating our nodes, so we
+        # don't make multiple requests for split nodes. Holds full sequences by
+        # ID.
+        self._sequence_cache = {}
+        
+        # We need this for taking reverse complements. Handle all the ambiguity
+        # codes as defined at <http://www.boekhoff.info/?pid=data&dat=fasta-
+        # codes>
+        self._complement_table = string.maketrans(
+            "ACGTNKMRYSWBVHDacgtnkmryswbvhd", "TGCANMKYRSWVBDHtgcanmkyrswvbdh")
+        
+    def _get_sequence(self, sequence_id):
+        """
+        Return the bases for the sequence with the given ID. Downloads it if it
+        has not been downloaded already.
+        """
+        
+        if not self._sequence_cache.has_key(sequence_id):
+            # We need to do the download, and convert to bytes when we get it.
+            self._sequence_cache[sequence_id] = \
+                self._httpClient.getSequenceBases(sequence_id).sequence.encode(
+                "utf8")
+               
+        # Give back what we have  
+        return self._sequence_cache[sequence_id]
+        
+    def _reverse_complement(self, string):
+        """
+        Return the reverse complement of a DNA string.
+        
+        """
+        
+        # Complement and reverse it.
+        return str.translate(string, self._complement_table)[::-1]
+        
+        
     def convert(self):
         """
         Actually do the conversion.
@@ -386,17 +423,17 @@ class LastgraphConverter(AbstractConverter):
             self._outputStream.write("NODE\t{}\t{}\t0\n".format(index + 1,
                 length))
             
-            # Now we need the node sequence.
-            for i in xrange(2):
-                # For each direction (forward and reverse)
+            # Get the node sequence by slicing the (cached) full sequence
+            node_sequence = self._get_sequence(
+                sequence_id)[start:start + length]
                 
-                for j in xrange(length):
-                    # For each base in that direction, put an N.
-                    # TODO: call getSequenceBases and use the start
-                    self._outputStream.write("N")
-
-                # End the line
-                self._outputStream.write("\n")
+            # Save the forward sequence
+            self._outputStream.write(node_sequence)
+            self._outputStream.write("\n")
+            
+            # Save the reverse sequence
+            self._outputStream.write(self._reverse_complement(node_sequence))
+            self._outputStream.write("\n")
                 
         # Now the arcs.
         for end1, end2 in downloaded_joins:
