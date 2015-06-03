@@ -30,6 +30,7 @@ AVRO_LONG_MAX = 2**31 - 1
 def setCommaSeparatedAttribute(request, args, attr):
     attribute = getattr(args, attr)
     if attribute is not None:
+        # TODO: why are we doing our parsing in here?
         setattr(request, attr, attribute.split(","))
 
 
@@ -60,11 +61,21 @@ class RequestFactory(object):
         """
         return workaround in self.workarounds
 
+    def _addPaging(self, request):
+        """
+        Set the paging fields on the given request. Call only on requests that
+        do paging.
+        """
+
+        # Set the page size
+        request.pageSize = self.args.pageSize
+
+        # The page token starts out None by default
+
     def createSearchVariantSetsRequest(self):
         request = protocol.SearchVariantSetsRequest()
         setCommaSeparatedAttribute(request, self.args, 'datasetIds')
-        request.pageSize = self.args.pageSize
-        request.pageToken = None
+        self._addPaging(request)
         return request
 
     def createSearchVariantsRequest(self):
@@ -84,12 +95,14 @@ class RequestFactory(object):
         else:
             request.callSetIds = self.args.callSetIds.split(",")
         setCommaSeparatedAttribute(request, self.args, 'variantSetIds')
+        self._addPaging(request)
         return request
 
     def createSearchReferenceSetsRequest(self):
         request = protocol.SearchReferenceSetsRequest()
         setCommaSeparatedAttribute(request, self.args, 'accessions')
         setCommaSeparatedAttribute(request, self.args, 'md5checksums')
+        self._addPaging(request)
         return request
 
     def createSearchReferencesRequest(self):
@@ -97,40 +110,47 @@ class RequestFactory(object):
         setCommaSeparatedAttribute(request, self.args, 'accessions')
         setCommaSeparatedAttribute(request, self.args, 'md5checksums')
         request.referenceSetId = self.args.referenceSetId
+        self._addPaging(request)
         return request
 
     def createSearchSequencesRequest(self):
         request = protocol.SearchSequencesRequest()
         request.referenceSetId = self.args.referenceSetId
+        self._addPaging(request)
         return request
 
     def createSearchJoinsRequest(self):
         request = protocol.SearchJoinsRequest()
         request.referenceSetId = self.args.referenceSetId
         # TODO: Add in the parent sequence, start, and length parameters
+        self._addPaging(request)
         return request
 
     def createSearchReadGroupSetsRequest(self):
         request = protocol.SearchReadGroupSetsRequest()
         setCommaSeparatedAttribute(request, self.args, 'datasetIds')
         request.name = self.args.name
+        self._addPaging(request)
         return request
 
     def createSearchCallSetsRequest(self):
         request = protocol.SearchCallSetsRequest()
         setCommaSeparatedAttribute(request, self.args, 'variantSetIds')
         request.name = self.args.name
+        self._addPaging(request)
         return request
 
     def createSearchAlleleCallsRequest(self):
         request = protocol.SearchAlleleCallsRequest()
         # setCommaSeparatedAttribute(request, self.args, 'alleleIds')
         # setCommaSeparatedAttribute(request, self.args, 'callSetIds')
+        self._addPaging(request)
         return request
 
     def createSearchAllelesRequest(self):
         request = protocol.SearchAllelesRequest()
         # setCommaSeparatedAttribute(request, self.args, 'variantId')
+        self._addPaging(request)
         return request
 
     def createExtractSubgraphRequest(self):
@@ -139,6 +159,7 @@ class RequestFactory(object):
         request.position.position = self.args.position
         request.position.sequenceId = self.args.sequenceId
         request.radius = self.args.radius
+        # No paging on this request
         return request
 
     def createSearchReadsRequest(self):
@@ -151,19 +172,22 @@ class RequestFactory(object):
         request.end = self.args.end
         request.referenceId = self.args.referenceId
         request.referenceName = self.args.referenceName
+        self._addPaging(request)
         return request
 
     def createListReferenceBasesRequest(self):
         request = protocol.ListReferenceBasesRequest()
         request.start = self.args.start
         request.end = self.args.end
+        # No paging for base listing
         return request
-        
+
     def createGetSequenceBasesRequest(self):
         request = protocol.GetSequenceBasesRequest()
         request.position.sequenceId = self.args.sequenceId
         request.start = self.args.start
         request.end = self.args.end
+        # No page tokens here either
         return request
 
 
@@ -410,9 +434,6 @@ class AbstractSearchRunner(AbstractQueryRunner):
         Sets the _httpClient and other common attributes
         """
         self._minimalOutput = args.minimalOutput
-        if 'pageSize' in args:
-            # ListReferenceBasesRequest does not have a pageSize attr
-            request.pageSize = args.pageSize
         self._request = request
 
         # TODO: _httpClient clearly not set as in docstring.
