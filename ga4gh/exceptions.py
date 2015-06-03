@@ -70,6 +70,12 @@ class BaseServerException(Exception):
         # that this value is signed 32 bit integer.
         code = zlib.crc32(cls.__name__) & 0xffffffff
         return code
+        
+    def __str__(self):
+        return self.message
+        
+    def __repr__(self):
+        return self.message
 
 
 #####################################################################
