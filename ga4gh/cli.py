@@ -314,6 +314,12 @@ def ga2lastgraph_main(parser=None):
     addVariantSetIdsArgument(parser)
     addPageSizeArgument(parser)
     addOutputFileArgument(parser)
+    
+    # We can skip the sequence download since it can be super slow.
+    parser.add_argument("--noSequence", action="store_false",
+        dest="saveSequence",
+        help="Don't download actual sequence bases; just use Ns")
+    
     args = parser.parse_args()
 
     ga2lastgraph_run(args)
@@ -338,7 +344,8 @@ def ga2lastgraph_run(args):
 
     # do conversion
     lastgraphConverter = converters.LastgraphConverter(httpClient, outputStream,
-        searchSequencesRequest, searchJoinsRequest)
+        searchSequencesRequest, searchJoinsRequest,
+        saveSequence=args.saveSequence)
     lastgraphConverter.convert()
 
     # cleanup

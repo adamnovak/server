@@ -231,7 +231,7 @@ class LastgraphConverter(AbstractConverter):
     Converts a request to a lastgraph file
     """
     def __init__(self, httpClient, outputStream, searchSequencesRequest,
-        searchJoinsRequest):
+        searchJoinsRequest, saveSequence=True):
         """
         Given the HTTP client used to make the requests, a stream to write the
         lastgraph-format output to, a request for all the sequences in a
@@ -239,6 +239,8 @@ class LastgraphConverter(AbstractConverter):
         a converter that converts the graph defined by the sequences and joins
         to lastgraph format. Every sequence will become a node, and every join
         an arc.
+        
+        If saveSequence is false, don't download the sequence data.
         """
 
         super(LastgraphConverter, self).__init__(httpClient)
@@ -247,6 +249,7 @@ class LastgraphConverter(AbstractConverter):
         self._outputStream = outputStream
         self._searchSequencesRequest = searchSequencesRequest
         self._searchJoinsRequest = searchJoinsRequest
+        self._saveSequence = saveSequence
         
         # We need a cache of sequence bases for populating our nodes, so we
         # don't make multiple requests for split nodes. Holds full sequences by
@@ -423,17 +426,27 @@ class LastgraphConverter(AbstractConverter):
             self._outputStream.write("NODE\t{}\t{}\t0\n".format(index + 1,
                 length))
             
-            # Get the node sequence by slicing the (cached) full sequence
-            node_sequence = self._get_sequence(
-                sequence_id)[start:start + length]
-                
-            # Save the forward sequence
-            self._outputStream.write(node_sequence)
-            self._outputStream.write("\n")
+            if self._saveSequence:
             
-            # Save the reverse sequence
-            self._outputStream.write(self._reverse_complement(node_sequence))
-            self._outputStream.write("\n")
+                # Get the node sequence by slicing the (cached) full sequence
+                node_sequence = self._get_sequence(
+                    sequence_id)[start:start + length]
+                
+                # Save the forward sequence
+                self._outputStream.write(node_sequence)
+                self._outputStream.write("\n")
+                
+                # Save the reverse sequence
+                self._outputStream.write(self._reverse_complement(node_sequence))
+                self._outputStream.write("\n")
+                
+            else:
+                # Make up sequences
+                
+                for i in xrange(2):
+                    for j in xrange(length):
+                        self._outputStream.write("N")
+                    self._outputStream.write("\n")
                 
         # Now the arcs.
         for end1, end2 in downloaded_joins:
